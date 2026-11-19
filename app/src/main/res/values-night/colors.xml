@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- 다크모드(Dark Mode)일 때 자동으로 적용되는 배경 및 텍스트 컬러 -->
+    <color name="bg_main">#0F172A</color>
+    <color name="card_white">#1E293B</color>
+    <color name="primary_blue">#3B82F6</color>
+    <color name="primary_blue_dark">#1D4ED8</color>
+    <color name="primary_blue_light">#1E3A8A</color>
+
+    <!-- 텍스트 및 구분선 컬러 (다크모드용 밝은 글씨) -->
+    <color name="text_primary">#F8FAFC</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="text_muted">#64748B</color>
+    <color name="divider_gray">#334155</color>
+
+    <!-- 카테고리 및 뱃지 컬러 -->
+    <color name="badge_auto_bg">#1E3A8A</color>
+    <color name="badge_auto_text">#93C5FD</color>
+    <color name="badge_manual_bg">#334155</color>
+    <color name="badge_manual_text">#CBD5E1</color>
+
+    <!-- 원 그래프(Pie Chart) 카테고리별 고유 색상 -->
+    <color name="cat_food">#60A5FA</color>
+    <color name="cat_housing">#34D399</color>
+    <color name="cat_transport">#FBBF24</color>
+    <color name="cat_telecom">#A78BFA</color>
+    <color name="cat_medical">#F87171</color>
+    <color name="cat_leisure">#F472B6</color>
+    <color name="cat_etc">#9CA3AF</color>
+</resources>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- 메인 테마 및 배경 컬러 (Light 모드 기본) -->
+    <color name="bg_main">#F4F6F9</color>
+    <color name="card_white">#FFFFFF</color>
+    <color name="primary_blue">#2563EB</color>
+    <color name="primary_blue_dark">#1E40AF</color>
+    <color name="primary_blue_light">#EFF6FF</color>
+
+    <!-- 텍스트 및 구분선 컬러 -->
+    <color name="text_primary">#111827</color>
+    <color name="text_secondary">#6B7280</color>
+    <color name="text_muted">#9CA3AF</color>
+    <color name="divider_gray">#E5E7EB</color>
+
+    <!-- 카테고리 및 뱃지 컬러 -->
+    <color name="badge_auto_bg">#DBEAFE</color>
+    <color name="badge_auto_text">#1D4ED8</color>
+    <color name="badge_manual_bg">#F3F4F6</color>
+    <color name="badge_manual_text">#4B5563</color>
+
+    <!-- 원 그래프(Pie Chart) 카테고리별 고유 색상 -->
+    <color name="cat_food">#3B82F6</color>          <!-- 식비: 블루 -->
+    <color name="cat_housing">#10B981</color>       <!-- 주거: 에메랄드 그린 -->
+    <color name="cat_transport">#F59E0B</color>     <!-- 교통: 앰버 오렌지 -->
+    <color name="cat_telecom">#8B5CF6</color>       <!-- 통신: 바이올렛 -->
+    <color name="cat_medical">#EF4444</color>       <!-- 의료: 코랄 레드 -->
+    <color name="cat_leisure">#EC4899</color>       <!-- 여가: 핑크 -->
+    <color name="cat_etc">#6B7280</color>           <!-- 기타: 슬레이트 그레이 -->
+</resources>
