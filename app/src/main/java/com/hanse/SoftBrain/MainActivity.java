@@ -14,6 +14,7 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
 import androidx.core.graphics.Insets;
@@ -32,6 +33,7 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 
 import java.text.NumberFormat;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -78,10 +80,16 @@ public class MainActivity extends AppCompatActivity {
     private MaterialSwitch switchAppToss;
     private MaterialSwitch switchAppSms;
     private MaterialSwitch switchAppCard;
+    private MaterialSwitch switchAppBank;
+    private MaterialSwitch switchAppPay;
     private MaterialCardView cardSystemNotificationPermission;
+    private TextView tvNotificationPermissionStatus;
 
-    // 데이터 리스트 (전체 원본 리스트 & 기간 필터링된 표시용 리스트)
-    private static final List<ExpenseItem> masterExpenseList = new ArrayList<>();
+    private ExpenseDao expenseDao;
+
+    // 데이터 리스트 (DB 전체 내역 & 기간 필터링된 표시용 리스트)
+    // masterExpenseList는 Room DB(LiveData)를 관찰해서 자동으로 채워집니다.
+    private final List<ExpenseItem> masterExpenseList = new ArrayList<>();
     private final List<ExpenseItem> filteredExpenseList = new ArrayList<>();
     private ExpenseAdapter expenseAdapter;
 
@@ -111,17 +119,33 @@ public class MainActivity extends AppCompatActivity {
         initViews();
         setupRecyclerView();
 
-        // 최초 실행 시에만 샘플 더미 데이터 세팅 (다크모드 전환 시에도 수정 내역 유지)
-        if (masterExpenseList.isEmpty()) {
-            loadInitialDummyData();
-        }
-
         setupBottomNavigation();
         setupTimelineControls();
         setupSettingsControls();
 
-        // 홈 화면(원 그래프 + 분류별 상세) 및 타임라인 리스트 최신화
-        refreshAllScreens();
+        // Room DB 관찰: 직접 입력·수정하거나 알림 리스너가 결제를 저장하면 자동으로 호출되어
+        // 홈 화면(원 그래프 + 분류별 상세) 및 타임라인 리스트가 최신화됩니다.
+        expenseDao = AppDatabase.get(this).expenseDao();
+        expenseDao.observeAll().observe(this, items -> {
+            masterExpenseList.clear();
+            masterExpenseList.addAll(items);
+            refreshAllScreens();
+        });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 알림 접근 설정 화면에서 돌아왔을 때 권한 상태 갱신
+        updateNotificationPermissionStatus();
+    }
+
+    private void updateNotificationPermissionStatus() {
+        if (PaymentNotificationListener.isPermissionGranted(this)) {
+            tvNotificationPermissionStatus.setText("허용됨 ✓");
+        } else {
+            tvNotificationPermissionStatus.setText("허용 필요 ＞");
+        }
     }
 
     private void initViews() {
@@ -152,7 +176,10 @@ public class MainActivity extends AppCompatActivity {
         switchAppToss = findViewById(R.id.switchAppToss);
         switchAppSms = findViewById(R.id.switchAppSms);
         switchAppCard = findViewById(R.id.switchAppCard);
+        switchAppBank = findViewById(R.id.switchAppBank);
+        switchAppPay = findViewById(R.id.switchAppPay);
         cardSystemNotificationPermission = findViewById(R.id.cardSystemNotificationPermission);
+        tvNotificationPermissionStatus = findViewById(R.id.tvNotificationPermissionStatus);
     }
 
     private void setupRecyclerView() {
@@ -243,6 +270,7 @@ public class MainActivity extends AppCompatActivity {
         EditText etExpensePlace = sheetView.findViewById(R.id.etExpensePlace);
         Spinner spinnerCategory = sheetView.findViewById(R.id.spinnerCategory);
         MaterialButton btnSheetCancel = sheetView.findViewById(R.id.btnSheetCancel);
+        MaterialButton btnSheetDelete = sheetView.findViewById(R.id.btnSheetDelete);
         MaterialButton btnSheetSubmit = sheetView.findViewById(R.id.btnSheetSubmit);
 
         // 분류 Spinner 어댑터 연결 (식비, 주거, 교통, 통신, 의료, 여가, 기타)
@@ -256,6 +284,16 @@ public class MainActivity extends AppCompatActivity {
         final boolean isEdit = (targetItem != null);
         if (isEdit) {
             tvSheetTitle.setText("지출 내역 수정");
+            btnSheetDelete.setVisibility(View.VISIBLE);
+            btnSheetDelete.setOnClickListener(v -> new AlertDialog.Builder(this)
+                    .setTitle("지출 내역 삭제")
+                    .setMessage("'" + targetItem.getTitle() + "' 내역을 삭제할까요? 되돌릴 수 없습니다.")
+                    .setNegativeButton("취소", null)
+                    .setPositiveButton("삭제", (dialog, which) -> {
+                        AppDatabase.IO.execute(() -> expenseDao.delete(targetItem));
+                        bottomSheetDialog.dismiss();
+                    })
+                    .show());
             etExpenseTitle.setText(targetItem.getTitle());
             etExpenseTime.setText(targetItem.getTime());
             etExpenseAmount.setText(String.valueOf(targetItem.getAmount()));
@@ -270,7 +308,9 @@ public class MainActivity extends AppCompatActivity {
             }
         } else {
             tvSheetTitle.setText("새 지출 내역 추가");
-            etExpenseTime.setText("15:00");
+            Calendar now = Calendar.getInstance();
+            etExpenseTime.setText(String.format(Locale.KOREA, "%02d:%02d",
+                    now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE)));
         }
 
         // [취소] 버튼
@@ -291,6 +331,11 @@ public class MainActivity extends AppCompatActivity {
             if (time.isEmpty()) {
                 time = "12:00";
             }
+            int[] hourMinute = ExpenseItem.parseHourMinute(time);
+            if (hourMinute == null) {
+                etExpenseTime.setError("시간은 14:30 형식으로 입력해 주세요");
+                return;
+            }
             if (place.isEmpty()) {
                 place = "장소 미입력";
             }
@@ -304,34 +349,28 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if (isEdit) {
-                // 기존 항목 수정 반영
+                // 기존 항목 수정 반영 (DB 저장 → LiveData가 화면 자동 갱신)
                 targetItem.setTitle(title);
                 targetItem.setTime(time);
                 targetItem.setAmount(amount);
                 targetItem.setPlace(place);
                 targetItem.setCategory(category);
+                AppDatabase.IO.execute(() -> expenseDao.update(targetItem));
                 Toast.makeText(this, "지출 내역이 수정되었습니다.", Toast.LENGTH_SHORT).show();
             } else {
-                // 새 지출 내역을 최상단(오늘)에 추가
-                long newId = System.currentTimeMillis();
+                // 새 지출 내역: 오늘 날짜 + 입력한 시간
+                Calendar cal = Calendar.getInstance();
+                cal.set(Calendar.HOUR_OF_DAY, hourMinute[0]);
+                cal.set(Calendar.MINUTE, hourMinute[1]);
+                cal.set(Calendar.SECOND, 0);
+                cal.set(Calendar.MILLISECOND, 0);
                 ExpenseItem newItem = new ExpenseItem(
-                        newId,
-                        title,
-                        place,
-                        amount,
-                        category,
-                        "11월 19일 (오늘)",
-                        time,
-                        "직접 입력",
-                        false,
-                        0
-                );
-                masterExpenseList.add(0, newItem);
+                        title, place, amount, category,
+                        cal.getTimeInMillis(), "직접 입력", false, null);
+                AppDatabase.IO.execute(() -> expenseDao.insert(newItem));
                 Toast.makeText(this, "새 지출 내역이 등록되었습니다.", Toast.LENGTH_SHORT).show();
             }
 
-            // 홈 화면 원 그래프 & 타임라인 리스트 즉시 갱신
-            refreshAllScreens();
             bottomSheetDialog.dismiss();
         });
 
@@ -363,6 +402,7 @@ public class MainActivity extends AppCompatActivity {
 
         int grandTotal = 0;
         for (ExpenseItem item : masterExpenseList) {
+            if (!isThisMonth(item)) continue; // 홈 화면은 "이번 달" 기준
             String cat = item.getCategory();
             int prev = totalCategorySum.containsKey(cat) ? totalCategorySum.get(cat) : 0;
             totalCategorySum.put(cat, prev + item.getAmount());
@@ -493,6 +533,8 @@ public class MainActivity extends AppCompatActivity {
         switchAppToss.setChecked(prefs.getBoolean("app_toss", true));
         switchAppSms.setChecked(prefs.getBoolean("app_sms", true));
         switchAppCard.setChecked(prefs.getBoolean("app_card", true));
+        switchAppBank.setChecked(prefs.getBoolean("app_bank", true));
+        switchAppPay.setChecked(prefs.getBoolean("app_pay", true));
 
         // 1. 다크모드 스위치
         switchDarkMode.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -523,6 +565,16 @@ public class MainActivity extends AppCompatActivity {
             showAppToggleToast("카드사 앱 푸시", isChecked);
         });
 
+        switchAppBank.setOnCheckedChangeListener((btn, isChecked) -> {
+            prefs.edit().putBoolean("app_bank", isChecked).apply();
+            showAppToggleToast("은행 앱 출금", isChecked);
+        });
+
+        switchAppPay.setOnCheckedChangeListener((btn, isChecked) -> {
+            prefs.edit().putBoolean("app_pay", isChecked).apply();
+            showAppToggleToast("간편결제", isChecked);
+        });
+
         // 3. 안드로이드 알림 접근 허용 시스템 설정 화면으로 이동
         cardSystemNotificationPermission.setOnClickListener(v -> {
             try {
@@ -544,53 +596,11 @@ public class MainActivity extends AppCompatActivity {
         applyTimelineFilter(currentPeriodDays);
     }
 
-    /**
-     * 원 그래프의 모든 분류(식비, 주거, 교통, 통신, 의료, 여가)와
-     * 타임라인의 기간 필터(하루, 일주일, 한달)를 즉시 테스트할 수 있는 샘플 데이터입니다.
-     */
-    private void loadInitialDummyData() {
-        masterExpenseList.clear();
-
-        // [하루 (오늘, daysAgo = 0)] -> 오늘 식비 지출이 가장 크게 잡히도록 구성
-        masterExpenseList.add(new ExpenseItem(
-                1L, "수제버거 세트 & 음료", "버거킹 한세점", 14500, "식비",
-                "11월 19일 (오늘)", "13:20", "카카오뱅크 알림", true, 0
-        ));
-        masterExpenseList.add(new ExpenseItem(
-                2L, "아이스 아메리카노", "스타벅스 역삼점", 4500, "식비",
-                "11월 19일 (오늘)", "09:40", "토스 알림", true, 0
-        ));
-        masterExpenseList.add(new ExpenseItem(
-                3L, "택시 이동", "카카오T 택시", 8800, "교통",
-                "11월 19일 (오늘)", "08:50", "카카오뱅크 알림", true, 0
-        ));
-
-        // [일주일 이내 (daysAgo = 1 ~ 6)]
-        masterExpenseList.add(new ExpenseItem(
-                4L, "CGV 영화 & 팝콘", "CGV 강남", 22000, "여가",
-                "11월 17일 (2일 전)", "19:30", "토스 알림", true, 2
-        ));
-        masterExpenseList.add(new ExpenseItem(
-                5L, "감기약 처방 및 진료", "한세내과의원·온누리약국", 16500, "의료",
-                "11월 15일 (4일 전)", "11:15", "문자 메시지(SMS)", true, 4
-        ));
-        masterExpenseList.add(new ExpenseItem(
-                6L, "삼겹살 저녁 모임", "하남돼지집", 38000, "식비",
-                "11월 14일 (5일 전)", "20:10", "카카오뱅크 알림", true, 5
-        ));
-
-        // [한달 이내 (daysAgo = 7 ~ 30)]
-        masterExpenseList.add(new ExpenseItem(
-                7L, "월세 관리비 및 수도세", "자취방 관리사무소", 65000, "주거",
-                "11월 05일 (2주 전)", "10:00", "카카오뱅크 알림", true, 14
-        ));
-        masterExpenseList.add(new ExpenseItem(
-                8L, "휴대폰 5G 요금제 납부", "SKT 자동이체", 49000, "통신",
-                "11월 01일 (이번 달 초)", "09:00", "문자 메시지(SMS)", true, 18
-        ));
-        masterExpenseList.add(new ExpenseItem(
-                9L, "지하철·버스 정기 교통비", "티머니 후불교통", 42500, "교통",
-                "10월 28일 (3주 전)", "08:30", "KB국민카드 알림", true, 22
-        ));
+    private static boolean isThisMonth(ExpenseItem item) {
+        Calendar now = Calendar.getInstance();
+        Calendar cal = Calendar.getInstance();
+        cal.setTimeInMillis(item.getTimestamp());
+        return cal.get(Calendar.YEAR) == now.get(Calendar.YEAR)
+                && cal.get(Calendar.MONTH) == now.get(Calendar.MONTH);
     }
 }

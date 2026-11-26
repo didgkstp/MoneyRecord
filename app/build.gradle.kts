@@ -35,4 +35,11 @@ dependencies {
     implementation(libs.appcompat)
     implementation(libs.constraintlayout)
     implementation(libs.material)
+
+    // 로컬 DB (Room) + 화면 자동 갱신용 LiveData
+    implementation(libs.room.runtime)
+    annotationProcessor(libs.room.compiler)
+    implementation(libs.lifecycle.livedata)
+
+    testImplementation(libs.junit)
 }
